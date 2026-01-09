@@ -59,22 +59,37 @@ predday <- function(x, grid, sts, model_fun, neibs, coords, crs, coords_as_preds
   } else{
     
     ref <- data.frame(sts,val = as.numeric(x))
-    ref <- terra::vect(ref, geom = coords, crs = crs, keepgeom = TRUE)
-    grd <- terra::as.points(grid)  
+    # ref <- terra::vect(ref, geom = coords, crs = crs, keepgeom = TRUE)
+    grd <- terra::as.data.frame(grid, xy = TRUE)  
     
   # start evaluating data
   j <- NULL
-  rr <- foreach(j = 1:length(grd), .combine=cbind) %dopar% {
-    predpoint(can = grd[j], ref = ref, 
+  rr <- foreach(j = 1:nrow(grd), .combine=cbind, .export = c("predpoint")) %dopar% {
+    predpoint(can = grd[j, ], ref = ref, 
               model_fun = model_fun,
               thres = thres, neibs = neibs,
-              covars = covars)
+              covars = covars, coords = coords, crs = crs)
   }
     rr <- t(rr)
     
-    rp <- terra::rast(cbind(terra::crds(grid),rr[,1]), type="xyz", crs=crs)
-    re <- terra::rast(cbind(terra::crds(grid),rr[,2]), type="xyz", crs=crs)
-    names(rp) <- names(re) <- date
+    # Create template rasters from the input grid (use only 1st layer to avoid multi-layer output)
+    rp <- terra::rast(grid[[1]])
+    re <- terra::rast(grid[[1]])
+    terra::values(rp) <- NA
+    terra::values(re) <- NA
+    names(rp) <- date
+    names(re) <- date
+    
+    # Identify cells corresponding to the processed points
+    
+    # Identify cells corresponding to the processed points
+    # grd has x and y columns from as.data.frame(..., xy=TRUE)
+    cells <- terra::cellFromXY(rp, cbind(grd$x, grd$y))
+    
+    # Assign values
+    rp[cells] <- rr[,1]
+    re[cells] <- rr[,2]
+    
     terra::writeRaster(rp, paste0(paste0("./pred", ifelse(is.na(dir_name), "", paste0("_", dir_name)), "/"), gsub('-','',date),'.tif'), overwrite = TRUE)
     terra::writeRaster(re, paste0(paste0("./err", ifelse(is.na(dir_name), "", paste0("_", dir_name)), "/"), gsub('-','',date),'.tif'), overwrite = TRUE)
     

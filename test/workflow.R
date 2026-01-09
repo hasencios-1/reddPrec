@@ -5,6 +5,11 @@
 # 1. Preparation of data
 # -------------------------------------------------------------------------
 
+# Ensure we are working in the 'test' directory to save all outputs there
+if (dir.exists("test")) {
+  setwd("test")
+}
+
 library(climaemet)
 library(sf)
 library(giscoR)
@@ -35,6 +40,11 @@ obs_pr <- apply(obs_pr, 2, function(x){
   x[x == 'Ip'] <- NA
   as.numeric(x)
 })
+
+# Save Raw Data
+dates_vec <- seq.Date(as.Date('2025-03-01'), as.Date('2025-03-31'), by = 'day')
+raw_out <- data.frame(Date = dates_vec, as.data.frame(obs_pr))
+write.csv(raw_out, "prec_raw.csv", row.names = FALSE)
 
 # Create stations data.frame
 stations <- data.frame(ID = dd$indicativo, alt = dd$altitud, lon = dd$X, lat = dd$Y)
@@ -75,7 +85,9 @@ names(covs) <- c('aspectcosine', 'aspectsine', 'dist2coast',
 pca_cvs <- terra::princomp(covs[[-c(4:6)]])
 pca_cvs <- terra::predict(covs[[-c(4:6)]], pca_cvs, index = 1:4)
 names(pca_cvs) <- c("pc1", "pc2", "pc3", "pc4")
-# plot(pca_cvs) # Optional plot
+pdf("pca_cvs.pdf")
+plot(pca_cvs)
+dev.off()
 
 # Extract PCs values to stations
 stations <- vect(stations, geom = c('lon', 'lat'), crs = 'EPSG:4326', keepgeom = TRUE)
@@ -96,26 +108,43 @@ colnames(dem_df)[3] <- "elevation"
 st_sf <- st_as_sf(st)
 st_sf$prec_acum <- colSums(obs_pr, na.rm = TRUE)
 
-# ggplot() +
-#   geom_raster(data = dem_df, aes(x = x, y = y, fill = elevation)) +
-#   scale_fill_gradient(name = "Elevation (m)", low = "lightgreen", high = "darkgreen") +
-#   geom_sf(data = st_transform(st_sf, crs = st_crs(spain)), aes(size = prec_acum), color = "black", alpha = 0.7) +
-#   scale_size_continuous(name = "Cumulated PCP (mm)") +
-#   geom_sf(data = spain, fill = NA, color = "black") +
-#   coord_sf(crs = st_crs(spain)) +
-#   theme_minimal() +
-#   theme(legend.position = "right")
+p_map <- ggplot() +
+  geom_raster(data = dem_df, aes(x = x, y = y, fill = elevation)) +
+  scale_fill_gradient(name = "Elevation (m)", low = "lightgreen", high = "darkgreen") +
+  geom_sf(data = st_transform(st_sf, crs = st_crs(spain)), aes(size = prec_acum), color = "black", alpha = 0.7) +
+  scale_size_continuous(name = "Cumulated PCP (mm)") +
+  geom_sf(data = spain, fill = NA, color = "black") +
+  coord_sf(crs = st_crs(spain)) +
+  theme_minimal() +
+  theme(legend.position = "right")
+ggsave("stations_map.pdf", p_map)
 
 # Environmental predictors
 env <- c(dem, lon, lat, pca_cvs)
 names(env)[1:3] <- c("alt", "lon", "lat")
-# plot(env) # Optional plot
+pdf("env_predictors.pdf")
+plot(env)
+dev.off()
 
 # -------------------------------------------------------------------------
 # 3. Quality control
 # -------------------------------------------------------------------------
 
 library(reddPrec)
+library(doParallel)
+library(foreach)
+
+# Robustly determine the path to the 'R' directory
+# This handles execution from project root or 'test' directory
+r_dir <- "R"
+if (!dir.exists(r_dir) && dir.exists(file.path("..", r_dir))) {
+  r_dir <- file.path("..", r_dir)
+}
+
+source(file.path(r_dir, "learner_glm.R"))
+source(file.path(r_dir, "predpoint.R"))
+source(file.path(r_dir, "predday.R"))
+source(file.path(r_dir, "gridPcp.R"))
 
 # Run Quality Control
 qcdata <- qcPrec(prec = obs_pr, 
@@ -131,6 +160,10 @@ qcdata <- qcPrec(prec = obs_pr,
                  qc4 = c(0.99, 5), 
                  qc5 = c(0.01, 0.1, 5),
                  ncpu = 8) # Adjust ncpu as needed
+
+# Save QC Data
+qc_out <- data.frame(Date = dates_vec, as.data.frame(qcdata$cleaned))
+write.csv(qc_out, "prec_qc.csv", row.names = FALSE)
 
 # Check flagged values
 allcodes <- as.numeric(as.matrix(qcdata$codes))
@@ -183,6 +216,21 @@ max_count <- max(c(hex_daily@count, hex_monthly@count))
 # Plotting logic is extensive, refer to README for the full ggplot code if needed.
 # Included minimal plotting setup above.
 
+p1 <- ggplot(daily_df, aes(x=obs, y=st_pred)) +
+  geom_hex(bins=60) +
+  geom_abline(intercept=0, slope=1, col="red") +
+  labs(title="Daily: Obs vs Pred", x="Observed", y="Predicted") +
+  theme_minimal()
+
+p2 <- ggplot(monthly_df, aes(x=obs_sum, y=pred_sum)) +
+  geom_hex(bins=60) +
+  geom_abline(intercept=0, slope=1, col="red") +
+  labs(title="Monthly: Obs vs Pred", x="Observed", y="Predicted") +
+  theme_minimal()
+
+ggsave("gap_filling_daily.pdf", p1)
+ggsave("gap_filling_monthly.pdf", p2)
+
 # -------------------------------------------------------------------------
 # 5. Gridding
 # -------------------------------------------------------------------------
@@ -192,6 +240,10 @@ recs <- gf_res$obs
 recs[is.na(recs)] <- gf_res$st_pred[is.na(recs)]
 rec <- data.frame(date = gf_res$date, ID = gf_res$ID, pred = recs)
 rec <- cast(rec, date ~ ID)
+
+# Save Filled Data
+write.csv(rec, "prec_filled.csv", row.names = FALSE)
+
 rec <- rec[, -1]
 
 day21 <- as.numeric(rec[21, ])
@@ -229,6 +281,8 @@ if (file.exists('./pred_grid_test/20250321.tif')) {
   m <- cbind(vals[1:21], vals[2:22], 1:21)
   d <- classify(pre, m)
   fadd <- function() plot(vect(spain), add = T)
+  pdf("grid_20250321.pdf")
   plot(d, type = "interval", breaks = 1:22, col = cols, plg = list(legend = legnd),
        main = title, fun = fadd)
+  dev.off()
 }

@@ -63,7 +63,7 @@ learner_glm <- function(ref, can, covars) {
   )
   
   # prediction
-  pb <- predict(fmtb, newdata = as.data.frame(can[, covars]),
+  pb <- predict(fmtb, newdata = as.data.frame(can[, covars, drop = FALSE]),
                 type = "response")
   
   #####################################  
@@ -84,7 +84,7 @@ learner_glm <- function(ref, can, covars) {
   )
   
   # prediction
-  p <- predict(fmt, newdata = as.data.frame(can[, covars]),type = "response")
+  p <- predict(fmt, newdata = as.data.frame(can[, covars, drop = FALSE]),type = "response")
   p <- (p * RANGE) + MINc
   
   # error calculation 
