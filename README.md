@@ -26,17 +26,11 @@ While the whole package is designed to work with daily precipitation, monthly an
 
 ## Installation
 
-Installation is straightforward since the package is available on CRAN:
-
-``` r
-install.packages("reddPrec")
-```
-
-However, if you want to have the last stable developing version with bugs fixes and other improvements, it can be installed directly from GitHub
+Installation can be done directly from GitHub to ensure you have the latest fixes and improvements:
 
 ``` r
 library(devtools)
-install_github("rsnotivoli/reddPrec")
+install_github("hasencios-1/reddPrec")
 ```
 
 ## Preparation of data
