@@ -1,0 +1,12 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+# Ignore test outputs
+test/*.pdf
+test/*.csv
+test/pred_grid_test/
+test/err_grid_test/
+test/pred/
+test/err/
+test/*.tif

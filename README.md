@@ -405,3 +405,12 @@ vals <- c(-1, 0, 1, 2, 3, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90,
   plot(d,  type="interval", breaks = 1:22, col = cols, plg=list(legend=legnd),
        main = title, fun = fadd)
 ```
+
+## Recent Fixes (v3.0.2 Patched)
+
+This version includes several critical fixes and improvements for stability and compatibility:
+
+-   **XGBoost Compatibility:** Updated `learner_xgboost` to use the `xgb.train` interface with `binary:logistic` objective. This resolves errors seen with newer versions of the `xgboost` package where the simplified `xgboost()` function rejected certain parameters or data types.
+-   **Parallel Processing Fix:** Fixed a bug in the `gapFilling` function where the internal function `stand_ratio` was not properly exported to worker nodes during parallel execution, causing failures on Windows systems.
+-   **Function Naming Standardization:** Renamed `learner_xgboost_patched` to `learner_xgboost` in the source code to ensure consistency with the package documentation and NAMESPACE exports.
+-   **Workflow Validation:** The entire processing chain (QC -> Gap Filling -> Gridding) has been validated with multiple machine learning backends, including GLM, Neural Networks (`learner_nn`), SVM (`learner_svm`), and XGBoost (`learner_xgboost`).

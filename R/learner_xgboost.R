@@ -57,23 +57,29 @@ learner_xgboost <- function(ref, can, covars) {
   rr$val[rr$val > 0] <- 1
   # rr$val <- factor(rr$val, levels = c(0, 1))
   
-  # model
-  f <- as.formula(
-    paste(paste(covars, collapse = " + "), "~ val", collapse = " ")
-  )
+  # Force to integer 0/1 to avoid "Got numeric 'y'" errors and ensure check works
+  rr$val <- as.integer(rr$val)
   
-  # model
-  set.seed(123)
-  fmb <- xgboost::xgboost(data = as.matrix(rr[, covars]),
-                          label = rr$val,
-                          verbose = 0, nthread = 1,
-                          objective = "binary:logistic",
-                          nrounds = 5)
-  # prediction
-  pb <- predict(fmb,
-                newdata = as.matrix(as.data.frame(can[, covars])),
-                type = "prob")
-  pb <- as.numeric(pb)
+  if (length(unique(rr$val)) < 2) {
+    pb <- as.numeric(unique(rr$val)[1])
+  } else {
+    # model
+    f <- as.formula(
+      paste(paste(covars, collapse = " + "), "~ val", collapse = " ")
+    )
+    
+    # model
+    set.seed(123)
+    dtrain <- xgboost::xgb.DMatrix(data = as.matrix(rr[, covars]), label = as.numeric(rr$val))
+    fmb <- xgboost::xgb.train(data = dtrain,
+                              params = list(objective = "binary:logistic", nthread = 1),
+                              nrounds = 5,
+                              verbose = 0)
+    # prediction
+    pb <- predict(fmb,
+                  newdata = as.matrix(as.data.frame(can[, covars])))
+    pb <- as.numeric(pb)
+  }
   
   #####################################  
   # amount prediction

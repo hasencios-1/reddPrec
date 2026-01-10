@@ -21,7 +21,7 @@ library(reshape)
 # Download daily precipitation observations
 # Using the function aemet_daily_clim as requested
 data_daily <- aemet_daily_clim(station = "all",
-                               start = "2025-03-01", 
+                               start = "2025-03-01",
                                end = "2025-03-31",
                                return_sf = TRUE)
 
@@ -77,8 +77,8 @@ tpi <- terra::terrain(dem, v = 'TPI')
 tri <- terra::terrain(dem, v = 'TRI')
 
 covs <- c(aspectcosine, aspectsine, dist2coast, dem, lon, lat, roughness, slope, tpi, tri)
-names(covs) <- c('aspectcosine', 'aspectsine', 'dist2coast', 
-                 'elevation', 'longitude', 'latitude', 'roughness', 
+names(covs) <- c('aspectcosine', 'aspectsine', 'dist2coast',
+                 'elevation', 'longitude', 'latitude', 'roughness',
                  'slope', 'tpi', 'tri')
 
 # PCA of topo variables
@@ -142,22 +142,33 @@ if (!dir.exists(r_dir) && dir.exists(file.path("..", r_dir))) {
 }
 
 source(file.path(r_dir, "learner_glm.R"))
+source(file.path(r_dir, "learner_nn.R"))
+source(file.path(r_dir, "learner_svm.R"))
+source(file.path(r_dir, "learner_xgboost.R"))
 source(file.path(r_dir, "predpoint.R"))
 source(file.path(r_dir, "predday.R"))
 source(file.path(r_dir, "gridPcp.R"))
+source(file.path(r_dir, "qcFirst.R"))
+source(file.path(r_dir, "qcLast.R"))
+source(file.path(r_dir, "qcPrec.R"))
+source(file.path(r_dir, "fillData.R"))
+source(file.path(r_dir, "gapFilling.R"))
+source(file.path(r_dir, "standardization.R"))
+source(file.path(r_dir, "stand_qq.R"))
+source(file.path(r_dir, "stand_ratio.R"))
 
 # Run Quality Control
-qcdata <- qcPrec(prec = obs_pr, 
-                 sts = stations, 
-                 model_fun = learner_glm,
-                 crs = 'EPSG:4326', 
+qcdata <- qcPrec(prec = obs_pr,
+                 sts = stations,
+                 model_fun = learner_xgboost,
+                 crs = 'EPSG:4326',
                  coords = c('lon', 'lat'),
-                 coords_as_preds = TRUE, 
-                 neibs = 15, 
+                 coords_as_preds = TRUE,
+                 neibs = 15,
                  thres = NA,
-                 qc = 'all', 
-                 qc3 = 10, 
-                 qc4 = c(0.99, 5), 
+                 qc = 'all',
+                 qc3 = 10,
+                 qc4 = c(0.99, 5),
                  qc5 = c(0.01, 0.1, 5),
                  ncpu = 8) # Adjust ncpu as needed
 
@@ -175,15 +186,15 @@ print(flagged)
 # -------------------------------------------------------------------------
 
 # Run Gap Filling
-gf_res <- gapFilling(prec = qcdata$cleaned, 
+gf_res <- gapFilling(prec = qcdata$cleaned,
                      sts = stations,
-                     model_fun = learner_glm,
-                     dates = seq.Date(as.Date('2025-03-01'), 
+                     model_fun = learner_xgboost,
+                     dates = seq.Date(as.Date('2025-03-01'),
                                       as.Date('2025-03-31'),
-                                      by = 'day'), 
-                     stmethod = 'ratio', 
+                                      by = 'day'),
+                     stmethod = 'ratio',
                      ncpu = 8, # Adjust ncpu as needed
-                     thres = NA, 
+                     thres = NA,
                      neibs = 15,
                      coords = c('lon', 'lat'),
                      crs = 'EPSG:4326',
@@ -253,7 +264,7 @@ gridPcp(prec = day21,
         grid = env,
         dyncovars = NULL,
         sts = stations[, 1:4],
-        model_fun = learner_glm,
+        model_fun = learner_xgboost,
         dates = as.Date('2025-03-21'),
         ncpu = 8, # Adjust ncpu as needed
         thres = NA,
@@ -271,13 +282,13 @@ if (file.exists('./pred_grid_test/20250321.tif')) {
   legnd <- paste(vals[1:21], vals[2:22], sep = '-')
   legnd[1] <- '0'
   legnd[21] <- '>110'
-  
+
   cols <- c('#ffffff', '#ffd576', '#ffe685', '#fff0b0',
             '#fffecf', '#b2fdad', '#a2eda6', '#61cf87',
             '#00c56a', '#b2f1fe', '#72f0fe', '#1cdefe',
             '#31c3fe', '#6e90fe', '#b77dff', '#ca8eff',
             '#dc9ae7', '#f4a1f3', '#fec1ff', '#ffdcfe', '#e7e7e7')
-  
+
   m <- cbind(vals[1:21], vals[2:22], 1:21)
   d <- classify(pre, m)
   fadd <- function() plot(vect(spain), add = T)

@@ -87,7 +87,7 @@ gapFilling <- function(prec, sts, model_fun = learner_glm, dates, stmethod = NUL
   prec_pred <- suppressMessages(reshape::cast(bb,date~ID)[,-1])
   prec_pred <- prec_pred[,match(colnames(prec),colnames(prec_pred))]
   
-  pred <- foreach(j = 1:ncol(prec_pred), .combine=cbind, .export=c("standardization","stand_qq")) %dopar% {
+  pred <- foreach(j = 1:ncol(prec_pred), .combine=cbind, .export=c("standardization","stand_qq", "stand_ratio")) %dopar% {
     standardization(obs = prec[,j],
                     sim = prec_pred[,j],
                     method = stmethod, 
