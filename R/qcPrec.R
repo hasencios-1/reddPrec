@@ -74,12 +74,13 @@ qcPrec <- function (prec, sts, model_fun = learner_glm, crs, coords, coords_as_p
               thres = thres,
               qc = qc, qc3 = qc3, qc4 = qc4, qc5 = qc5)
     }
+    # Transpose result to maintain 'stations as columns' structure
     a <- t(a)
     
     
     #increase iteration
     it <- it + 1 
-    #check if need more iterations
+    #check if need more iterations (stop if no more suspect values found)
     if (sum(a[, ncol(a)]) == 0) {
       seguir <- 0
     }
@@ -106,6 +107,7 @@ qcPrec <- function (prec, sts, model_fun = learner_glm, crs, coords, coords_as_p
            thres = thres,
            qc = qc, qc3 = qc3, qc4 = qc4, qc5 = qc5)
   }
+ # Handle single-row matrix results correctly to avoid dimension drops
  if(!is.matrix(b)){
     cleaned <- b[1:nrow(sts)]
     codes <- b[(nrow(sts)+1):length(b)]

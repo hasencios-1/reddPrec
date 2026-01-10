@@ -60,6 +60,7 @@ learner_xgboost <- function(ref, can, covars) {
   # Force to integer 0/1 to avoid "Got numeric 'y'" errors and ensure check works
   rr$val <- as.integer(rr$val)
   
+  # Handle cases where all neighbors are either all wet or all dry to avoid xgboost failure
   if (length(unique(rr$val)) < 2) {
     pb <- as.numeric(unique(rr$val)[1])
   } else {
@@ -70,6 +71,7 @@ learner_xgboost <- function(ref, can, covars) {
     
     # model
     set.seed(123)
+    # Use xgb.DMatrix and xgb.train interface for better stability across xgboost versions
     dtrain <- xgboost::xgb.DMatrix(data = as.matrix(rr[, covars]), label = as.numeric(rr$val))
     fmb <- xgboost::xgb.train(data = dtrain,
                               params = list(objective = "binary:logistic", nthread = 1),

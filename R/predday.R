@@ -18,6 +18,7 @@
 #' 
 predday <- function(x, grid, sts, model_fun, neibs, coords, crs, coords_as_preds, date, thres, dir_name) {
   
+  # Ensure prediction and error directories exist with optional suffix
   dir.create(paste0("pred", ifelse(is.na(dir_name), "", paste0("_", dir_name))), showWarnings = FALSE)
   dir.create(paste0("err", ifelse(is.na(dir_name), "", paste0("_", dir_name))), showWarnings = FALSE)
   

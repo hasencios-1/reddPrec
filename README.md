@@ -26,7 +26,7 @@ While the whole package is designed to work with daily precipitation, monthly an
 
 ## Installation
 
-Installation can be done directly from GitHub to ensure you have the latest fixes and improvements:
+This version of the package includes minor modifications made to test and validate the original functionality, as well as an additional `test` folder with usage examples. For this reason, it must be installed directly from this repository:
 
 ``` r
 library(devtools)

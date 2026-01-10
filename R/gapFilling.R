@@ -87,6 +87,7 @@ gapFilling <- function(prec, sts, model_fun = learner_glm, dates, stmethod = NUL
   prec_pred <- suppressMessages(reshape::cast(bb,date~ID)[,-1])
   prec_pred <- prec_pred[,match(colnames(prec),colnames(prec_pred))]
   
+  # Explicitly export internal standardization functions to avoid 'function not found' errors on worker nodes (Windows)
   pred <- foreach(j = 1:ncol(prec_pred), .combine=cbind, .export=c("standardization","stand_qq", "stand_ratio")) %dopar% {
     standardization(obs = prec[,j],
                     sim = prec_pred[,j],
