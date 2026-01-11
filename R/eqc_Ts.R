@@ -53,7 +53,13 @@ eqc_Ts <- function(prec,
   
   message(paste0('[',Sys.time(),'] -', " Enhanced QC"))
 
-  registerDoParallel(cores=ncpu)
+  if (ncpu > 1) {
+    cl <- parallel::makeCluster(ncpu)
+    doParallel::registerDoParallel(cl)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+  } else {
+    doParallel::registerDoParallel(cores = 1)
+  }
   
   j <- NULL
   a <- foreach(

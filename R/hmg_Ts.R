@@ -60,7 +60,13 @@ hmg_Ts <- function(prec, sts, neibs_max = 8, neibs_min = 3, thres = 1e+6, cor_ne
   
   message(paste0('[',Sys.time(),'] -', " Homogenization"))
   
-  registerDoParallel(cores=ncpu)
+  if (ncpu > 1) {
+    cl <- parallel::makeCluster(ncpu)
+    doParallel::registerDoParallel(cl)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+  } else {
+    doParallel::registerDoParallel(cores = 1)
+  }
   
   j <- NULL
   a <- foreach(

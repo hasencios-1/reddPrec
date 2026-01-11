@@ -12,11 +12,12 @@
 #' @param date value of class "Date"
 #' @param thres numeric. Maximum radius (in km) where neighboring stations will be searched. NA value uses the whole spatial domain.
 #' @param dir_name character. Name of the of the folder in which the data will be saved. Default NA uses the original names.
-#' @importFrom foreach foreach %dopar%
+#' @param parallel logical. If TRUE (default), use parallel processing.
+#' @importFrom foreach foreach %dopar% %do%
 #' @importFrom terra vect rast crds writeRaster as.points
 #' @noRd
 #' 
-predday <- function(x, grid, sts, model_fun, neibs, coords, crs, coords_as_preds, date, thres, dir_name) {
+predday <- function(x, grid, sts, model_fun, neibs, coords, crs, coords_as_preds, date, thres, dir_name, parallel = TRUE) {
   
   # Ensure prediction and error directories exist with optional suffix
   dir.create(paste0("pred", ifelse(is.na(dir_name), "", paste0("_", dir_name))), showWarnings = FALSE)
@@ -65,7 +66,8 @@ predday <- function(x, grid, sts, model_fun, neibs, coords, crs, coords_as_preds
     
   # start evaluating data
   j <- NULL
-  rr <- foreach(j = 1:nrow(grd), .combine=cbind, .export = c("predpoint")) %dopar% {
+  `%op%` <- if (parallel) `%dopar%` else `%do%`
+  rr <- foreach(j = 1:nrow(grd), .combine=cbind, .export = c("predpoint")) %op% {
     predpoint(can = grd[j, ], ref = ref, 
               model_fun = model_fun,
               thres = thres, neibs = neibs,

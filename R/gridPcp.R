@@ -21,6 +21,7 @@
 #' For instance, to model the first day the algorithm considers all rasters in "grid" and only those corresponding to the first day of each variable.
 #' @export
 #' @importFrom doParallel registerDoParallel
+#' @importFrom foreach foreach %dopar%
 #' @examples
 #' \dontrun{
 #' # fixed covariates (elevation, latitude, longitude)
@@ -73,7 +74,13 @@
 gridPcp <- function (prec, grid, dyncovars = NULL, sts, model_fun, dates, ncpu, thres, neibs,
                      coords, crs, coords_as_preds, dir_name = NA){
   
-  registerDoParallel(cores=ncpu)
+  if (ncpu > 1) {
+    cl <- parallel::makeCluster(ncpu)
+    doParallel::registerDoParallel(cl)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+  } else {
+    doParallel::registerDoParallel(cores = 1)
+  }
   
   # single day
   if(length(dates) == 1){
@@ -86,7 +93,8 @@ gridPcp <- function (prec, grid, dyncovars = NULL, sts, model_fun, dates, ncpu, 
             coords_as_preds = coords_as_preds,
             date = dates,
             thres = thres,
-            dir_name = dir_name)
+            dir_name = dir_name,
+            parallel = TRUE)
   }
   
   # multiple days
@@ -96,7 +104,17 @@ gridPcp <- function (prec, grid, dyncovars = NULL, sts, model_fun, dates, ncpu, 
     m <- match(colnames(prec), sts$ID)
     prec <- prec[,m]
     
-    for(i in 1:nrow(prec)){
+    # Prepare objects for parallelization
+    wgrid <- terra::wrap(grid)
+    wdyncovars <- if(!is.null(dyncovars)) terra::wrap(dyncovars) else NULL
+
+    i <- NULL
+    foreach(i = 1:nrow(prec), .packages = c('terra'), .export = c("predday", "predpoint")) %dopar% {
+      
+      # Unwrap objects inside the worker
+      grid <- terra::unwrap(wgrid)
+      dyncovars <- if(!is.null(wdyncovars)) terra::unwrap(wdyncovars) else NULL
+      
       message(paste0('[',Sys.time(),'] -', " Computing day ",dates[i]))
       date <- dates[i]
       
@@ -135,7 +153,8 @@ gridPcp <- function (prec, grid, dyncovars = NULL, sts, model_fun, dates, ncpu, 
               coords_as_preds = coords_as_preds,
               date = date,
               thres = thres,
-              dir_name = dir_name)
+              dir_name = dir_name,
+              parallel = FALSE)
     }
   }
   

@@ -52,7 +52,13 @@ qcPrec <- function (prec, sts, model_fun = learner_glm, crs, coords, coords_as_p
   # same order of columns and stations
   prec <- prec[,match(sts$ID,colnames(prec))]
   
-  registerDoParallel(cores=ncpu)
+  if (ncpu > 1) {
+    cl <- parallel::makeCluster(ncpu)
+    doParallel::registerDoParallel(cl)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+  } else {
+    doParallel::registerDoParallel(cores = 1)
+  }
   
   #First round of iterations
   a <- cbind(prec, 0) #adding the iter control at end

@@ -62,7 +62,13 @@ gapFilling <- function(prec, sts, model_fun = learner_glm, dates, stmethod = NUL
   
   message(paste0('[',Sys.time(),'] -', " Filling gaps"))
 
-  registerDoParallel(cores=ncpu)
+  if (ncpu > 1) {
+    cl <- parallel::makeCluster(ncpu)
+    doParallel::registerDoParallel(cl)
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+  } else {
+    doParallel::registerDoParallel(cores = 1)
+  }
   
   j <- NULL
   a <- foreach(j = 1:nrow(prec), .combine=rbind, .export=c("fillData")) %dopar% {
