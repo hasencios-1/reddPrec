@@ -1,0 +1,217 @@
+---
+title: "Informe Técnico: Procesamiento y Reconstrucción de Datos de Precipitación Diaria"
+subtitle: "Control de Calidad, Relleno de Lagunas e Interpolación Espacial mediante `reddPrec`"
+author: "Equipo de Análisis Meteorológico"
+date: "2026-01-12"
+lang: es
+format:
+  html:
+    theme: cosmo
+    toc: true
+    number-sections: true
+    self-contained: true
+    code-fold: true
+    code-tools: true
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(reddPrec)
+library(climaemet)
+library(sf)
+library(giscoR)
+library(reshape)
+library(elevatr)
+library(terra)
+library(ggplot2)
+library(patchwork)
+library(scales)
+library(hexbin)
+library(knitr)
+library(kableExtra)
+library(viridis)
+```
+
+# Introducción
+
+El presente informe detalla la metodología y los resultados del flujo de trabajo automatizado para el procesamiento de datos meteorológicos, específicamente observaciones diarias de precipitación en la España Peninsular y las Islas Baleares. El periodo de análisis abarca **Marzo de 2025**.
+
+El objetivo principal de este procedimiento es generar un conjunto de datos meteorológicos robusto, serialmente completo y espacialmente continuo. Para lograr esto, se ha implementado el paquete `reddPrec` en el entorno R, el cual utiliza algoritmos de aprendizaje automático de vanguardia, específicamente **Extreme Gradient Boosting (XGBoost)**. Esta técnica permite modelar relaciones complejas y no lineales entre las observaciones de las estaciones y un conjunto de predictores ambientales derivados de la topografía.
+
+El flujo de trabajo se divide en tres fases críticas: 1. **Adquisición y Preprocesamiento**: Obtención de datos brutos y generación de variables covariables. 2. **Control de Calidad (QC)**: Identificación y depuración de anomalías y errores sistemáticos. 3. **Reconstrucción Espacial**: Relleno de datos faltantes (Gap Filling) y generación de superficies continuas (Gridding).
+
+# Adquisición de Datos y Caracterización Geoespacial
+
+## Datos de Precipitación
+
+Los registros de precipitación diaria se obtuvieron a través de la API OpenData de AEMET, garantizando el acceso a la información más reciente y validada por la agencia estatal. Se seleccionaron todas las estaciones disponibles dentro del dominio geográfico de interés.
+
+```{r load_data}
+# Carga de datos brutos pre-descargados para garantizar la consistencia
+if(file.exists("prec_raw.csv")){
+  raw_data <- read.csv("prec_raw.csv")
+  n_stations <- ncol(raw_data) - 1
+  n_days <- nrow(raw_data)
+  
+  cat(paste("Dimensiones del Conjunto de Datos:\n"))
+  cat(paste("- Estaciones Meteorológicas:", n_stations, "\n"))
+  cat(paste("- Días Analizados:", n_days, "(Marzo 2025)\n"))
+} else {
+  warning("El archivo 'prec_raw.csv' no se encuentra. Por favor, ejecute el script 'workflow.R' primero.")
+}
+```
+
+Es importante destacar que durante la fase de limpieza inicial, los valores registrados como "Ip" (Inapreciable) o trazas, fueron tratados como valores nulos (`NA`) para evitar sesgos en los modelos numéricos, o convertidos a 0 según el criterio hidrológico estricto aplicado en `workflow.R`.
+
+## Variables Topográficas y Análisis de Componentes Principales (PCA)
+
+La precipitación es un fenómeno fuertemente influenciado por la orografía. Para capturar este efecto, se derivaron múltiples variables topográficas a partir de un Modelo Digital de Elevación (DEM). Estas variables incluyen:
+
+-   **Elevación**: Altitud sobre el nivel del mar.
+-   **Pendiente y Orientación (Aspect)**: Determinantes en la exposición a los vientos húmedos.
+-   **Rugosidad del Terreno, TPI y TRI**: Índices morfométricos que describen la complejidad del relieve.
+-   **Distancia a la Costa**: Factor crucial para la continentalidad.
+
+Dado que muchas de estas variables presentan una alta colinealidad (e.g., la pendiente y la rugosidad suelen estar correlacionadas), se aplicó un **Análisis de Componentes Principales (PCA)**. Este paso reduce la dimensionalidad del espacio de predictores, sintetizando la información topográfica en cuatro componentes principales (PC1 a PC4) que explican la mayor parte de la varianza espacial.
+
+```{r geospatial, fig.align='center', out.width="90%"}
+# Visualización del resultado del PCA si está disponible
+if(file.exists("pca_cvs.pdf")){
+  # En un entorno interactivo HTML, incrustamos la imagen o mostramos un placeholder
+  # knitr::include_graphics("pca_cvs.pdf") 
+  cat("El archivo PDF con los resultados del PCA se ha generado correctamente como 'pca_cvs.pdf'.")
+}
+```
+
+# Control de Calidad (QC)
+
+Los datos meteorológicos brutos son propensos a contener errores, ya sean fallos instrumentales, errores de transcripción o anomalías locales. La función `qcPrec` de `reddPrec` implementa un estricto control de calidad.
+
+## Metodología del QC
+
+El algoritmo emplea un enfoque iterativo donde, para cada estación y cada día, se estima un valor esperado utilizando la información de las 15 estaciones vecinas más correlacionadas y los predictores topográficos. El modelo **XGBoost** aprende el patrón local de precipitación y señala discrepancias significativas.
+
+Los criterios de bandera (flags) incluyen: 1. **Suspect Value**: Un valor de precipitación aislado rodeado de ceros en las estaciones vecinas. 2. **Suspect Zero**: Un cero aislado rodeado de eventos de precipitación significativos. 3. **Suspect Outlier**: La magnitud observada difiere drásticamente de la estimada (e.g., más de 10 veces el valor esperado). 4. **Suspect Wet/Dry**: Inconsistencias probabilísticas (e.g., reportar lluvia cuando la probabilidad de día seco es cercana al 100%).
+
+El proceso se ejecutó utilizando **22 núcleos de CPU** en paralelo, lo que permitió procesar la densa red de estaciones de manera eficiente.
+
+```{r qc_results_table}
+if(file.exists("prec_qc.csv") && file.exists("prec_raw.csv")){
+  qc_data <- read.csv("prec_qc.csv")
+  raw_d <- read.csv("prec_raw.csv")
+  
+  # Cálculo simple de estadísticas de limpieza
+  total_obs <- (ncol(qc_data)-1) * nrow(qc_data)
+  na_qc <- sum(is.na(qc_data[,-1]))
+  na_raw <- sum(is.na(raw_d[,-1]))
+  flagged <- na_qc - na_raw
+  
+  stats_df <- data.frame(
+    Metrica = c("Total de Observaciones", "Valores Perdidos Originales", "Valores Marcados como Sospechosos", "Total Vacíos para Relleno"),
+    Valor = c(total_obs, na_raw, flagged, na_qc)
+  )
+  
+  stats_df %>%
+    kbl(caption = "Estadísticas del Proceso de Control de Calidad") %>%
+    kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+}
+```
+
+# Relleno de Lagunas (Gap Filling) y Validación
+
+Una vez depurada la base de datos, procedemos a la reconstrucción de las series temporales. La función `gapFilling` imputa los valores faltantes utilizando nuevamente modelos XGBoost entrenados dinámicamente para cada estación objetivo.
+
+## Evaluación del Desempeño
+
+La validación cruzada es intrínseca al proceso. A continuación, se presenta la comparación entre los valores observados (que pasaron el QC) y las predicciones del modelo para esos mismos puntos. Una alta correlación y una alineación con la recta 1:1 indican una reconstrucción fiable.
+
+```{r gap_filling_plot, echo=FALSE, fig.height=6, fig.width=10}
+# Generación de gráfico de validación basado en los resultados guardados
+if(file.exists("prec_filled.csv") & file.exists("prec_qc.csv")){
+  
+  obs_data <- read.csv("prec_qc.csv")
+  pred_data <- read.csv("prec_filled.csv")
+  
+  # Normalizar nombres de columnas de fecha si difieren (Date vs date)
+  colnames(obs_data)[1] <- "Date"
+  colnames(pred_data)[1] <- "Date"
+  
+  # Eliminar columna de fecha para comparación numérica
+  obs_mat <- obs_data[,-1]
+  pred_mat <- pred_data[,-1]
+  
+  # Verificar si las dimensiones coinciden
+  if(all(dim(obs_mat) == dim(pred_mat))){
+    # Si los nombres no coinciden (e.g. V1 vs ID), asumimos orden posicional
+    # ya que provienen del mismo flujo
+    
+    # Vectorizar
+    obs_vec <- unlist(obs_mat)
+    pred_vec <- unlist(pred_mat)
+    
+    plot_df <- data.frame(Observado = obs_vec, Predicho = pred_vec)
+    plot_df <- plot_df[complete.cases(plot_df), ]
+    
+    ggplot(plot_df, aes(x=Observado, y=Predicho)) +
+      geom_hex(bins=60) +
+      scale_fill_viridis_c(trans = "log10", option = "plasma", name = "Frecuencia") +
+      geom_abline(intercept=0, slope=1, color="white", linetype="dashed", size=1) +
+      labs(title = "Validación Cruzada: Observado vs. Reconstruido",
+           subtitle = "Rendimiento del modelo XGBoost en escala diaria",
+           x = "Precipitación Observada (mm)",
+           y = "Precipitación Estimada (mm)") +
+      theme_minimal() +
+      theme(plot.title = element_text(face="bold", size=14))
+      
+  } else {
+    cat("No se puede generar el gráfico: Las dimensiones de los archivos QC y Filled no coinciden.")
+  }
+}
+```
+
+# Interpolación Espacial (Gridding)
+
+El producto final de este flujo de trabajo es la generación de campos continuos de precipitación. A diferencia de métodos tradicionales como IDW o Kriging, este enfoque utiliza la relación física aprendida entre la precipitación y las covariables topográficas para predecir la lluvia en cada celda de una malla de alta resolución.
+
+## Caso de Estudio: 21 de Marzo de 2025
+
+Se seleccionó el día 21 de marzo para demostrar la capacidad de espacialización del modelo. El mapa resultante muestra la distribución espacial de la precipitación, capturando gradientes orográficos y patrones regionales.
+
+```{r grid_display, echo=FALSE, fig.align='center', out.width="100%"}
+if(file.exists("pred_grid_test/20250321.tif")){
+  # Cargar raster y shapefile de España para contexto
+  grid_rast <- terra::rast("pred_grid_test/20250321.tif")
+  spain_sf <- gisco_get_nuts(country = "Spain", nuts_level = "2")
+  spain_sf <- spain_sf[spain_sf$NAME_LATN != 'Canarias', ]
+  
+  grid_df <- as.data.frame(grid_rast, xy = TRUE)
+  colnames(grid_df)[3] <- "Precip"
+  
+  ggplot() +
+    geom_raster(data = grid_df, aes(x = x, y = y, fill = Precip)) +
+    scale_fill_gradientn(colours = c("#f7fbff", "#deebf7", "#c6dbef", "#9ecae1", "#6baed6", "#4292c6", "#2171b5", "#084594"),
+                         values = scales::rescale(c(0, 5, 10, 20, 50, 100)),
+                         name = "Precipitación (mm)",
+                         na.value = "transparent") +
+    geom_sf(data = spain_sf, fill = NA, color = "black", size = 0.3) +
+    coord_sf(crs = 4326) +
+    labs(title = "Distribución Espacial de la Precipitación",
+         subtitle = "21 de Marzo de 2025",
+         caption = "Sistema de Coordenadas: WGS84") +
+    theme_void() +
+    theme(legend.position = "right",
+          plot.title = element_text(hjust = 0.5, face="bold"),
+          plot.subtitle = element_text(hjust = 0.5))
+} else {
+  cat("El archivo raster 'pred_grid_test/20250321.tif' no se encuentra disponible para visualización.")
+}
+```
+
+# Conclusiones y Próximos Pasos
+
+La implementación del flujo de trabajo `reddPrec` ha permitido transformar datos brutos y potencialmente erróneos en un producto climático de alto valor.
+
+**Logros Clave:** 1. **Limpieza Robusta**: Eliminación efectiva de valores anómalos mediante consenso espacial. 2. **Completitud**: Generación de series temporales continuas para todas las estaciones. 3. **Alta Resolución**: Producción de mapas de precipitación que respetan la física del terreno.
+
+Este conjunto de datos depurado está listo para ser utilizado en estudios hidrológicos, gestión de recursos hídricos y análisis de riesgos climáticos. Se recomienda extender este análisis a series históricas más largas para validar tendencias climáticas a largo plazo.

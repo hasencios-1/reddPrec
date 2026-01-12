@@ -170,7 +170,7 @@ qcdata <- qcPrec(prec = obs_pr,
                  qc3 = 10,
                  qc4 = c(0.99, 5),
                  qc5 = c(0.01, 0.1, 5),
-                 ncpu = 8) # Adjust ncpu as needed
+                 ncpu = 22) # Adjust ncpu as needed
 
 # Save QC Data
 qc_out <- data.frame(Date = dates_vec, as.data.frame(qcdata$cleaned))
@@ -193,7 +193,7 @@ gf_res <- gapFilling(prec = qcdata$cleaned,
                                       as.Date('2025-03-31'),
                                       by = 'day'),
                      stmethod = 'ratio',
-                     ncpu = 8, # Adjust ncpu as needed
+                     ncpu = 22, # Adjust ncpu as needed
                      thres = NA,
                      neibs = 15,
                      coords = c('lon', 'lat'),
@@ -266,7 +266,7 @@ gridPcp(prec = day21,
         sts = stations[, 1:4],
         model_fun = learner_xgboost,
         dates = as.Date('2025-03-21'),
-        ncpu = 8, # Adjust ncpu as needed
+        ncpu = 22, # Adjust ncpu as needed
         thres = NA,
         neibs = 15,
         coords = c('lon', 'lat'),
