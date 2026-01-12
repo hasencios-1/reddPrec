@@ -10,3 +10,5 @@ test/err_grid_test/
 test/pred/
 test/err/
 test/*.tif
+/.quarto/
+**/*.quarto_ipynb
